@@ -86,12 +86,20 @@ export async function POST(request: Request) {
         }
         // RPC not installed yet (account-supabase.sql not run): fall back to the
         // legacy non-atomic flow so registration keeps working.
-        try {
-          await validateActivationCode(activationCode);
-        } catch (legacyErr) {
-          recordLoginFailure(clientIp);
-          throw legacyErr;
-        }
+} else {
+  const displayName = cleanAccountText(record.displayName, 80) || username;
+  try {
+    user = await registerAccountWithCode({ username, password, displayName, activationCode });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message !== ACTIVATION_RPC_MISSING) {
+      recordLoginFailure(clientIp);
+      return NextResponse.json({ ok: false, error: message }, { status: 400 });
+    }
+    // 跳过激活码校验，直接创建用户
+    user = await createUser({ username, password, displayName });
+  }
+}
         user = await createUser({ username, password, displayName });
         await markActivationCodeUsed(activationCode, cleanAccountText(user.id, 120));
       }
