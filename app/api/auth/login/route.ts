@@ -3,18 +3,14 @@ import { NextResponse } from "next/server";
 import {
   ACCOUNT_SESSION_COOKIE,
   ACCOUNT_SESSION_MAX_AGE_SECONDS,
-  ACTIVATION_RPC_MISSING,
   cleanAccountText,
   createSession,
   createUser,
   findUserByUsername,
   isValidUsername,
-  markActivationCodeUsed,
   normalizeUsername,
-  registerAccountWithCode,
   toPublicAccount,
   touchUserLogin,
-  validateActivationCode,
   verifyPassword,
 } from "@/lib/server/account-auth";
 import { ACCOUNT_GATE_COOKIE } from "@/lib/account-cookie-constants";
@@ -43,7 +39,6 @@ export async function POST(request: Request) {
     const record = body && typeof body === "object" ? body as Record<string, unknown> : {};
     const username = normalizeUsername(record.username);
     const password = cleanAccountText(record.password, 120);
-    const activationCode = cleanAccountText(record.activationCode, 120);
 
     if (!isValidUsername(username)) {
       return NextResponse.json({ ok: false, error: "账号需为 3-40 位字母、数字、下划线、邮箱符号、点或短横线。" }, { status: 400 });
@@ -73,36 +68,8 @@ export async function POST(request: Request) {
       }
     } else {
       const displayName = cleanAccountText(record.displayName, 80) || username;
-      try {
-        // Atomic: claim the code + create the account in one locked transaction
-        // so concurrent first-time registrations can't over-redeem a code.
-        user = await registerAccountWithCode({ username, password, displayName, activationCode });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        if (message !== ACTIVATION_RPC_MISSING) {
-          // 无效激活码也计入失败:防止拿注册接口枚举激活码
-          recordLoginFailure(clientIp);
-          return NextResponse.json({ ok: false, error: message }, { status: 400 });
-        }
-        // RPC not installed yet (account-supabase.sql not run): fall back to the
-        // legacy non-atomic flow so registration keeps working.
-} else {
-  const displayName = cleanAccountText(record.displayName, 80) || username;
-  try {
-    user = await registerAccountWithCode({ username, password, displayName, activationCode });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (message !== ACTIVATION_RPC_MISSING) {
-      recordLoginFailure(clientIp);
-      return NextResponse.json({ ok: false, error: message }, { status: 400 });
-    }
-    // 跳过激活码校验，直接创建用户
-    user = await createUser({ username, password, displayName });
-  }
-}
-        user = await createUser({ username, password, displayName });
-        await markActivationCodeUsed(activationCode, cleanAccountText(user.id, 120));
-      }
+      // 直接创建用户，完全跳过激活码
+      user = await createUser({ username, password, displayName });
     }
 
     const publicAccount = toPublicAccount(user);
