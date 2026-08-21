@@ -72,9 +72,6 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: false, error: "账号或密码错误。" }, { status: 401 });
       }
     } else {
-      if (!activationCode) {
-        return NextResponse.json({ ok: false, error: "首次使用该账号需要填写激活码。" }, { status: 400 });
-      }
       const displayName = cleanAccountText(record.displayName, 80) || username;
       try {
         // Atomic: claim the code + create the account in one locked transaction
