@@ -6,7 +6,6 @@ import { Loader2, LogIn } from "lucide-react";
 import { AccountProvider } from "@/lib/account-context";
 import { ACCOUNT_NETWORK_ERROR, fetchCurrentAccount, loginAccount, logoutAccount, type AccountProfile } from "@/lib/account-client";
 import { isSelfHostedModeEnabled } from "@/lib/self-hosting";
-import { VERIFY_APPLICATIONS_CLOSED_MESSAGE, VERIFY_APPLICATIONS_OPEN } from "@/lib/verification-availability";
 
 type AccountGateProps = {
   children: ReactNode;
@@ -21,8 +20,6 @@ const SELF_HOSTED_ACCOUNT: AccountProfile = {
   status: "active",
 };
 
-// 内联兜底：弱网/离线下 SW 可能回退到旧 HTML，外链 CSS 拉不到（旧 hash 已 404），
-// 此时全页无样式，「正在校验账号」会裸排在左上角。内联样式不依赖外部 CSS，保证居中。
 const gateRootFallbackStyle: CSSProperties = {
   minHeight: "100vh",
   display: "flex",
@@ -45,7 +42,6 @@ export function AccountGate({ children }: AccountGateProps) {
   const [account, setAccount] = useState<AccountProfile | null>(selfHostedMode ? SELF_HOSTED_ACCOUNT : null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [activationCode, setActivationCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -69,7 +65,6 @@ export function AccountGate({ children }: AccountGateProps) {
       setError("");
       return;
     }
-    // 网络层失败（超时/断连/切网）：会话 cookie 还在，不应登出——给重试入口
     if (result.error === ACCOUNT_NETWORK_ERROR) {
       setStatus("unreachable");
       return;
@@ -88,7 +83,6 @@ export function AccountGate({ children }: AccountGateProps) {
     }
 
     void refreshAccount();
-    // 网络恢复（含 WiFi↔流量切换完成）时自动重试校验
     const onOnline = () => {
       setStatus(current => {
         if (current === "checking" || current === "unreachable") {
@@ -99,7 +93,6 @@ export function AccountGate({ children }: AccountGateProps) {
     };
     window.addEventListener("online", onOnline);
     return () => window.removeEventListener("online", onOnline);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selfHostedMode]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -111,7 +104,6 @@ export function AccountGate({ children }: AccountGateProps) {
       const result = await loginAccount({
         username,
         password,
-        activationCode: activationCode.trim() || undefined,
       });
       if (!result.ok || !result.account) {
         setError(result.error || "登录失败。");
@@ -120,7 +112,6 @@ export function AccountGate({ children }: AccountGateProps) {
       setAccount(result.account);
       setStatus("ready");
       setPassword("");
-      setActivationCode("");
     } finally {
       setBusy(false);
     }
@@ -205,29 +196,10 @@ export function AccountGate({ children }: AccountGateProps) {
               placeholder="至少 6 位"
             />
           </label>
-          <label>
-            <span>激活码</span>
-            <input
-              value={activationCode}
-              onChange={event => setActivationCode(event.target.value)}
-              autoComplete="one-time-code"
-              inputMode="text"
-              placeholder="首次使用该账号时填写"
-            />
-            {VERIFY_APPLICATIONS_OPEN ? (
-              <a className="account-gate-verify-link" href="/verify" target="_blank" rel="noreferrer">
-                没有激活码？申请访问资格 →
-              </a>
-            ) : (
-              <span className="account-gate-verify-link" aria-disabled="true">
-                {VERIFY_APPLICATIONS_CLOSED_MESSAGE}
-              </span>
-            )}
-          </label>
           {error ? <div className="account-gate-error" role="alert">{error}</div> : null}
           <button type="submit" disabled={busy}>
             {busy ? <Loader2 size={18} className="account-gate-spinner" /> : <LogIn size={18} />}
-            <span>{busy ? "处理中" : "登录 / 激活"}</span>
+            <span>{busy ? "处理中" : "登录"}</span>
           </button>
         </form>
       </section>
